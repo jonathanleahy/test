@@ -1,19 +1,130 @@
 import { useState } from 'react';
-import { ArrowUpDown, ExternalLink, CheckCircle, XCircle, AlertCircle, MoreVertical, Search } from 'lucide-react';
+import * as React from 'react';
+import {
+    ArrowUpDown,
+    ExternalLink,
+    MoreVertical,
+    Search,
+    CheckCircle2,
+    XCircle,
+    RotateCw,
+    Star,
+    Activity,
+    PauseCircle, PlayCircle
+} from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Progress } from "@/components/ui/progress";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { App, Deployment, DashboardData } from "@/hooks/useDashboardData";
 
-export const WorkDashboard = ({ isLoading, mockData }: { isLoading: boolean; mockData: DashboardData | null }) => {
+const getStatusIcon = (status: string, argocdStep: string) => {
+    let parsedStep;
+    try {
+        parsedStep = JSON.parse(argocdStep);
+    } catch (e) {
+        parsedStep = {};
+    }
+
+    console.log("Status:", status);
+    switch (status) {
+        case 'In Progress': {
+            const duration = parsedStep.pause?.duration ? `Paused for ${parsedStep.pause.duration}` : 'Paused';
+            return (
+                <div className="flex items-center">
+                    {parsedStep.pause?.duration ? (
+                        <RotateCw className="text-blue-500 animate-spin" />
+                    ) : (
+                        <PlayCircle className="text-orange-500" />
+                    )}
+                    <span className="ml-2">{status} {duration}</span>
+                </div>
+            );
+        }
+        case 'Up to date':
+            return (
+                <div className="flex items-center">
+                    <CheckCircle2 className="text-green-500" />
+                    <span className="ml-2">{status}</span>
+                </div>
+            );
+        case 'No Deployment':
+            return (
+                <div className="flex items-center">
+                    <XCircle className="text-yellow-500" />
+                    <span className="ml-2">{status}</span>
+                </div>
+            );
+        default: {
+            const duration = parsedStep.pause?.duration ? `Paused for ${parsedStep.pause.duration}` : 'Paused';
+            return (
+                <div className="flex items-center">
+                    {parsedStep.pause?.duration ? (
+                        <RotateCw className="text-orange-500 animate-spin" />
+                    ) : (
+                        <PlayCircle className="text-orange-500" />
+                    )}
+                    <span className="ml-2">{duration}</span>
+                </div>
+            );
+        }
+    }
+};
+
+const getTypeIcon = (type: string) => {
+    return type === 'primary' ?
+        <Star className="h-5 w-5 text-primary"/> :
+        <Activity className="h-5 w-5 text-secondary" />
+}
+
+const DeploymentProgress: React.FC<{
+    deployments: { type: string; percentage: number }[];
+    status: string;
+    argocdWeight: number;
+}> = ({ deployments, status, argocdWeight }) => {
+    const stable = deployments.find(d => d.type === "stable");
+    const canary = deployments.find(d => d.type === "canary");
+
+    if (!stable || !canary) {
+        return null;
+    }
+
+    const totalPercentage = stable.percentage + canary.percentage;
+
+    if (totalPercentage !== 100) {
+        console.error("The total percentage of stable and canary deployments must be 100%");
+        return null;
+    }
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between">
+                <span>{status}</span>
+                <span className="text-xs text-muted-foreground">
+        {`${100 - argocdWeight}% / ${argocdWeight}%`}
+    </span>
+            </div>
+            <div className="h-1.5 w-full bg-muted overflow-hidden rounded-full relative">
+                <div
+                    className="h-full bg-gray-500 absolute left-0 top-0"
+                    style={{width: `${100 - argocdWeight}%`}}
+                />
+                <div
+                    className="h-full bg-green-500 absolute left-0 top-0"
+                    style={{width: `${argocdWeight}%`, marginLeft: `${100 - argocdWeight}%`}}
+                />
+                <div
+                    className="h-full bg-green-500 absolute left-0 top-0"
+                    style={{width: `${argocdWeight}%`, marginLeft: `${stable.percentage + canary.percentage}%`}}
+                />
+            </div>
+        </div>
+    );
+};
+
+export const WorkDashboard = ({isLoading, mockData}: { isLoading: boolean; mockData: any | null }) => {
     const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-    const [sortColumn, setSortColumn] = useState<keyof App>("appName");
-    const [searchTerm, setSearchTerm] = useState<string>("");
+    const [sortColumn, setSortColumn] = useState("appName");
+    const [searchTerm, setSearchTerm] = useState("");
 
     if (isLoading) {
         return <div>Loading...</div>;
@@ -29,7 +140,7 @@ export const WorkDashboard = ({ isLoading, mockData }: { isLoading: boolean; moc
         return 0;
     });
 
-    const handleSort = (column: keyof App) => {
+    const handleSort = (column: string) => {
         if (column === sortColumn) {
             setSortDirection(sortDirection === "asc" ? "desc" : "asc");
         } else {
@@ -38,43 +149,32 @@ export const WorkDashboard = ({ isLoading, mockData }: { isLoading: boolean; moc
         }
     };
 
-    const getDeploymentStatus = (deployments: Deployment[]) => {
-        if (deployments.length === 0) return { status: "No Deployment", icon: <AlertCircle className="text-yellow-500" />, color: "bg-yellow-100 text-yellow-800" };
+    const getDeploymentStatus = (deployments: any[]) => {
+        if (deployments.length === 0) return { status: "No Deployment", color: "text-yellow-500" };
         if (deployments.length === 1 && deployments[0].percentage === 100) {
-            return { status: "Completed", icon: <CheckCircle className="text-green-500" />, color: "bg-green-100 text-green-800" };
+            return { status: "Up to date", color: "text-green-500" };
         }
         if (deployments.length > 1 || deployments[0].percentage < 100) {
-            return { status: "In Progress", icon: <AlertCircle className="text-blue-500" />, color: "bg-blue-100 text-blue-800" };
+            return { status: "In Progress", color: "text-blue-500" };
         }
-        return { status: "Unknown", icon: <XCircle className="text-red-500" />, color: "bg-red-100 text-red-800" };
+        return { status: "Unknown", color: "text-gray-500" };
     };
+
 
     return (
         <div className="container mx-auto p-4 bg-gray-50 min-h-screen">
-            <Card className="mb-6">
+            <Card className="w-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-2xl font-bold">Work Dashboard: {mockData.repoName}</CardTitle>
+                    <CardTitle className="text-xl">Work Dashboard: {mockData.repoName}</CardTitle>
                     <div className="flex space-x-2">
-                        <a
-                            href={mockData.repoBitUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                        >
-                            <Button variant="outline" size="sm">
-                                Repository <ExternalLink className="ml-1 w-4 h-4" />
-                            </Button>
-                        </a>
-                        <a
-                            href={mockData.argocd.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                        >
-                            <Button variant="outline" size="sm">
-                                ArgoCD <ExternalLink className="ml-1 w-4 h-4" />
-                            </Button>
-                        </a>
+                        <Button variant="outline" size="sm" asChild>
+                            <a href={mockData.repoBitUrl} target="_blank" rel="noopener noreferrer">
+                                Repository <ExternalLink className="ml-1 h-4 w-4" />
+                            </a>
+                        </Button>
+                        <span className="text-sm text-gray-500">
+                            ArgoCD
+                        </span>
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -93,114 +193,103 @@ export const WorkDashboard = ({ isLoading, mockData }: { isLoading: boolean; moc
                             Total Apps: {sortedApps.length}
                         </div>
                     </div>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
+                            <thead>
+                            <tr className="bg-muted/50">
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">Type</th>
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">
                                     <Button
                                         variant="ghost"
                                         onClick={() => handleSort("appName")}
-                                        className="font-bold"
+                                        className="h-8 px-2 text-xs font-medium"
                                     >
-                                        App Name <ArrowUpDown className="ml-2 h-4 w-4" />
+                                        App Name
+                                        <ArrowUpDown className="ml-2 h-4 w-4" />
                                     </Button>
-                                </TableHead>
-                                <TableHead>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => handleSort("type")}
-                                        className="font-bold"
-                                    >
-                                        Type <ArrowUpDown className="ml-2 h-4 w-4" />
-                                    </Button>
-                                </TableHead>
-                                <TableHead className="font-bold">Version</TableHead>
-                                <TableHead className="font-bold">Deployment Status</TableHead>
-                                <TableHead className="font-bold">Pods</TableHead>
-                                <TableHead className="font-bold">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                                </th>
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">Version</th>
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">Deployment Status</th>
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">ArgoCD Status</th>
+                                <th className="p-4 text-left text-xs font-medium text-muted-foreground">.---</th>
+
+                            </tr>
+                            </thead>
+                            <tbody className="text-sm space-y-1">
                             {sortedApps.map((app) => {
                                 const deploymentStatus = getDeploymentStatus(app.deployment.deployments);
                                 return (
-                                    <TableRow key={app.appName} className="hover:bg-gray-50 transition-colors duration-200">
-                                        <TableCell className="font-medium">{app.appName}</TableCell>
-                                        <TableCell>
-                                            <Badge variant={app.type === "primary" ? "default" : "secondary"}>
-                                                {app.type}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            {app.deployment.deployments.map((deployment, index) => (
-                                                <div key={index} className="mb-2">
-                                                    <div className="flex items-center space-x-2">
-                                                        <Badge variant="outline">{deployment.version}</Badge>
-                                                        <span className="text-xs text-gray-500">({deployment.type})</span>
-                                                    </div>
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <Progress value={deployment.percentage} className="h-2 w-full mt-1" />
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                                <p>{deployment.percentage}% deployed</p>
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
+                                    <tr key={app.appName} className="border-b border-muted/50 hover:bg-muted/50">
+                                        <td className="p-4">
+                                            {getTypeIcon(app.type)}
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="space-y-2 text-left">
+                                                <div>{app.appName.replace(mockData.repoName + '-', '')}</div>
+                                                <div
+                                                    className="text-xs text-muted-foreground capitalize">{app.type}
                                                 </div>
-                                            ))}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge className={`${deploymentStatus.color} flex items-center space-x-1 w-fit`}>
-                                                {deploymentStatus.icon}
-                                                <span>{deploymentStatus.status}</span>
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant="secondary" className="font-mono">
-                                                {app.deployment.totalPods}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="space-y-2">
+                                                {app.deployment.deployments.map((deployment: any, index: number) => (
+                                                    <div key={index} className="flex items-center gap-2">
+                                                        <span className="font-medium">{deployment.type}:</span>
+                                                        <span>{deployment.version}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </td>
+                                        <td className="p-8">
+                                            <DeploymentProgress
+                                                deployments={app.deployment.deployments}
+                                                status={deploymentStatus.status}
+                                                argocdWeight={parseFloat(app.argocd.status.weight)}
+                                            />
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center space-x-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <div
+                                                        className="h-10 px-6 text-xs flex items-center justify-center w-36 rounded">
+                                                        {getStatusIcon(deploymentStatus.status, app.argocd?.status?.step?.[0] || '{}')}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
                                                         <MoreVertical className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuItem asChild>
-                                                        <a
-                                                            href={app.argocd.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="cursor-pointer"
-                                                        >
+                                                        <a href={app.argocd.url} target="_blank" rel="noopener noreferrer">
                                                             View in ArgoCD
                                                         </a>
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem asChild>
-                                                        <a
-                                                            href={app.grafana.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="cursor-pointer"
-                                                        >
+                                                        <a href={app.grafana.url} target="_blank" rel="noopener noreferrer">
                                                             View in Grafana
                                                         </a>
                                                     </DropdownMenuItem>
+                                                    <DropdownMenuItem>View logs</DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
-                                        </TableCell>
-                                    </TableRow>
+                                        </td>
+                                    </tr>
                                 );
                             })}
-                        </TableBody>
-                    </Table>
+                            </tbody>
+                        </table>
+                    </div>
                 </CardContent>
             </Card>
         </div>
     );
-}
+};
+
+export default WorkDashboard;
